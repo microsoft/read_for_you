@@ -1,4 +1,4 @@
-django==4.2.16
+django==4.2.26
 django-cors-headers==4.8.0
 requests==2.32.4
 gunicorn==23.0.0
