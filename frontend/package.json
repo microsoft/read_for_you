@@ -11,12 +11,11 @@
   "dependencies": {
     "@echogarden/fvad-wasm": "^0.2.0",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.4.394",
-    "vue": "^3.5.18"
+    "pdfjs-dist": "^6.5.438",
+    "vue": "^3.5.45"
   },
   "devDependencies": {
-    "@azure/static-web-apps-cli": "^2.0.7",
-    "@vitejs/plugin-vue": "^6.0.1",
-    "vite": "^7.1.11"
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^7.3.8"
   }
 }

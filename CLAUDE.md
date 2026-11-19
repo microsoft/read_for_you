@@ -9,8 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Technology Stack
 
 - **Frontend**: Vue 3 + Vite (Composition API with `<script setup>`)
-- **Backend**: Django 4.2 + Django REST Framework
-- **PDF Processing**: pdf-lib, pdfjs-dist, PyPDF2
+- **Backend**: Django 5.2
+- **PDF Processing**: pdf-lib, pdfjs-dist, pypdf
 - **External Services**:
   - Azure Document Intelligence for OCR/document analysis
   - Custom TTS service (WebSocket-based)
@@ -163,7 +163,7 @@ The app heavily uses localStorage for state persistence:
 ### PDF Processing
 
 **Backend** (`PDFService.py`):
-- Uses PyPDF2 to extract specific page ranges
+- Uses pypdf to extract specific page ranges
 - Returns in-memory PDF bytes for upload to Azure
 
 **Frontend** (`extractPDF.js`):

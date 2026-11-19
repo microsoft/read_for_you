@@ -88,6 +88,24 @@ class SqlService:
 			if connection:
 				connection.close()
 
+	def task_belongs_to_user(self, user_id: str, request_id: str) -> bool:
+		"""判断 request_id 对应的任务是否属于该用户"""
+		connection = None
+		try:
+			connection = self._get_connection()
+			with connection.cursor() as cursor:
+				sql = "SELECT 1 FROM Tasks WHERE userId = %s AND requestId = %s LIMIT 1"
+				cursor.execute(sql, (user_id, request_id))
+				return cursor.fetchone() is not None
+
+		except Exception as e:
+			print(f"❌ SqlService.task_belongs_to_user Error: {e}")
+			return False
+
+		finally:
+			if connection:
+				connection.close()
+
 	def insert_task(self, user_id: str, request_id: str, book_name: str, page_range: str, status: str = 'pending') -> Dict[str, Any]:
 		"""
 		插入一条新的任务记录
