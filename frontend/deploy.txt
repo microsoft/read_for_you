@@ -1,2 +1,2 @@
-npx swa build
-npx swa deploy --env production --resource-group OPE --app-name ReadForYou --output-location dist
+npx @azure/static-web-apps-cli build
+npx @azure/static-web-apps-cli deploy --env production --resource-group OPE --app-name ReadForYou --output-location dist

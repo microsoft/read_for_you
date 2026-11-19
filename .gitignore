@@ -3,4 +3,6 @@ deploy_todolist.txt
 backend/.env
 frontend/.env
 __pycache__/
-**/__pycache__/
+**/__pycache__/.env
+*.sqlite3
+*.pyc

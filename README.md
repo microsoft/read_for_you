@@ -5,7 +5,7 @@ An intelligent PDF reading and recognition system that supports OCR recognition,
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.9+-green.svg)
 ![Vue](https://img.shields.io/badge/Vue-3.5+-brightgreen.svg)
-![Django](https://img.shields.io/badge/Django-4.2+-orange.svg)
+![Django](https://img.shields.io/badge/Django-5.2-orange.svg)
 
 ## 🌟 Project Overview
 
@@ -25,10 +25,10 @@ Read for You is a full-stack web application designed to provide users with an i
 
 ### Backend Technologies
 
-- **Framework**: Django 4.2.16
+- **Framework**: Django 5.2
 - **Core Dependencies**:
   - `django-cors-headers`: Cross-origin request handling
-  - `PyPDF2`: PDF file processing
+  - `pypdf`: PDF file processing
   - `azure-storage-blob`: Azure Blob Storage integration
   - `requests`: HTTP request handling
   - `python-dotenv`: Environment variable management
@@ -57,7 +57,7 @@ ReadForYou_Web/
 ├── backend/                    # Django backend
 │   ├── manage.py              # Django management script
 │   ├── requirements.txt       # Python dependencies
-│   ├── db.sqlite3            # SQLite database
+│   ├── .env.template         # Required settings (copy to .env)
 │   ├── read_for_you/         # Main application
 │   │   ├── settings.py       # Django settings
 │   │   ├── urls.py           # URL routing

@@ -18,6 +18,7 @@ class AzureBlobService2:
         if not account_name or not account_url:
             raise ValueError(
                 "Azure Blob Storage 2 认证信息未配置。请在 constants.py 文件中设置 AZURE_STORAGE_ACCOUNT_NAME2 与 AZURE_BLOB_ACCOUNT_URL2")
+        self.account_host = urlparse(account_url).hostname
         credential = DefaultAzureCredential()
         self.blob_service_client = BlobServiceClient(
             account_url, credential=credential)
@@ -42,6 +43,8 @@ class AzureBlobService2:
             # 从 URL 中提取 blob 名称
             # 支持完整 URL 或相对路径
             blob_name = self._extract_blob_name(image_url)
+            # 只允许读取图片，避免被用来读取容器里的其他文件
+            mime_type = self._get_mime_type(blob_name)
 
             # 获取容器客户端
             blob_client = self.blob_service_client.get_blob_client(
@@ -71,9 +74,6 @@ class AzureBlobService2:
                 f"⏱️ Blob下载耗时: API调用 {api_time:.3f}s, 数据读取 {chunk_time:.3f}s, 总计 {total_time:.3f}s - {blob_name}"
             )
 
-            # 根据文件扩展名确定 MIME 类型
-            mime_type = self._get_mime_type(blob_name)
-
             # 转换为 base64
             base64_str = base64.b64encode(image_bytes).decode('utf-8')
 
@@ -83,7 +83,7 @@ class AzureBlobService2:
             return data_url
 
         except Exception as e:
-            raise Exception(f"下载图片失败: {str(e)}")
+            raise Exception("下载图片失败") from e
 
     def _extract_blob_name(self, image_url: str) -> str:
         """
@@ -99,6 +99,9 @@ class AzureBlobService2:
         blob_name = ''
 
         if parsed.scheme in ('http', 'https'):
+            # 只接受配置的存储账户，不能指向别的主机
+            if parsed.hostname != self.account_host:
+                raise ValueError("不支持的图片地址")
             # parsed.path 已去除查询参数
             path_segments = [segment for segment in parsed.path.split('/') if segment]
             if not path_segments:
@@ -113,8 +116,8 @@ class AzureBlobService2:
         else:
             blob_name = image_url.lstrip('/')
 
-        if not blob_name:
-            raise ValueError(f"无法从 URL 中提取 blob 名称: {image_url}")
+        if not blob_name or '..' in blob_name.split('/'):
+            raise ValueError("无法从 URL 中提取 blob 名称")
 
         # 移除相对路径中的查询/片段（例如 ?sastoken）
         blob_name = blob_name.split('?', 1)[0].split('#', 1)[0]
@@ -137,7 +140,8 @@ class AzureBlobService2:
             'png': 'image/png',
             'gif': 'image/gif',
             'webp': 'image/webp',
-            'svg': 'image/svg+xml',
             'bmp': 'image/bmp',
         }
-        return mime_types.get(extension, 'image/jpeg')  # 默认为 jpeg
+        if extension not in mime_types:
+            raise ValueError("只支持图片文件")
+        return mime_types[extension]

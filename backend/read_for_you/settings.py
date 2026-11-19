@@ -10,28 +10,52 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+load_dotenv(BASE_DIR / ".env")
+
+
+def _env_list(name, default):
+    value = os.getenv(name)
+    if not value:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in ("1", "true", "yes")
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-#p7j0p2es($4ttan23--4spq5i@qsb49(99y+vrvgkt9&+wkcn"
+# Never commit it: set DJANGO_SECRET_KEY in the environment or backend/.env.
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-local-development-only"
+    else:
+        raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is off")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+ALLOWED_HOSTS = _env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    ["readforyou.xyz", "4.193.237.95", ".azurewebsites.net", "localhost", "127.0.0.1"],
+)
 
-ALLOWED_HOSTS = ['*']
-
-CSRF_TRUSTED_ORIGINS = [
-    "http://4.193.237.95",
-    "https://4.193.237.95",
-    "http://readforyou.xyz",
-    "https://readforyou.xyz",
-]
+CSRF_TRUSTED_ORIGINS = _env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    [
+        "http://4.193.237.95",
+        "https://4.193.237.95",
+        "http://readforyou.xyz",
+        "https://readforyou.xyz",
+    ],
+)
 
 SyncAnalysisUrl = "https://readforyou-intelligentocr-bsg6d7csabgjfec5.westus2-01.azurewebsites.net/api/intelligentOcr/syncAnalyze"
 AsyncAnalysisUrl = "https://readforyou-intelligentocr-bsg6d7csabgjfec5.westus2-01.azurewebsites.net/api/intelligentOcr/asyncAnalyze"
@@ -42,7 +66,6 @@ CheckStatusUrl = ""
 # Application definition
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -63,10 +86,20 @@ MIDDLEWARE = [
     "read_for_you.middleware.UUIDCookieMiddleware",
 ]
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "https://readforyou.xyz",
-]
+CORS_ALLOWED_ORIGINS = _env_list(
+    "DJANGO_CORS_ALLOWED_ORIGINS",
+    ["http://localhost:5173", "https://readforyou.xyz"],
+)
+
+# Reject request bodies larger than this before they reach the views.
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_UPLOAD_BYTES
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
 
 
 ROOT_URLCONF = "read_for_you.urls"

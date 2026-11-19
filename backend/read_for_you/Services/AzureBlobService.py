@@ -97,6 +97,22 @@ class AzureBlobService:
 			print(f"   错误信息: {e}")
 			raise
 
+	def _load_books_list(self) -> list:
+		container_client = self.blob_service_client.get_container_client(self.container_name)
+		blob_client = container_client.get_blob_client('metadata/books_list.json')
+		file_data = blob_client.download_blob().readall()
+
+		import json
+		return json.loads(file_data.decode('utf-8'))
+
+	def get_library_prefixes(self) -> set:
+		"""在线书库中允许公开读取的 book_prefix 集合（统一不带结尾的 /）"""
+		return {
+			book['book_prefix'].rstrip('/')
+			for book in self._load_books_list()
+			if book.get('book_prefix')
+		}
+
 	def download_meta_data(self):
 		"""
 		下载书籍元数据，并为每本书注入带 SAS Token 的封面图片 URL。
@@ -117,13 +133,7 @@ class AzureBlobService:
 			]
 		}
 		"""
-		container_client = self.blob_service_client.get_container_client(self.container_name)
-		blob_client = container_client.get_blob_client('metadata/books_list.json')
-		download_stream = blob_client.download_blob()
-		file_data = download_stream.readall()
-
-		import json
-		books_metadata = json.loads(file_data.decode('utf-8'))
+		books_metadata = self._load_books_list()
 
 		# 为每本书注入带 SAS Token 的封面图片 URL
 		for book in books_metadata:

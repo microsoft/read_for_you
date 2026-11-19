@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import time
 import base64
 from io import BytesIO
@@ -15,6 +16,10 @@ from .Services.SqlService import SqlService
 from .Services.test import testBulkJSON
 import asyncio
 
+logger = logging.getLogger(__name__)
+
+# 在线书库允许下载的文件类型
+LIBRARY_FILE_TYPES = {'pdf', 'json'}
 
 def _standard_api_response(success: bool, data=None, error_msg: str = "") -> JsonResponse:
 	"""统一结构的 JSON 响应，HTTP 状态码固定为 200"""
@@ -47,6 +52,11 @@ def recognition(request):
 	if not file:
 		return _standard_api_response(False, error_msg='缺少文件参数')
 
+	if file.size > settings.MAX_UPLOAD_BYTES:
+		return _standard_api_response(False, error_msg='文件过大')
+
+	book_name = book_name[:255]
+
 	try:
 		# 2. 使用 PDFService 裁剪 PDF
 		extracted_pdf = PDFService.extractPDF(file, page_range)
@@ -74,7 +84,7 @@ def recognition(request):
 		)
 
 		if not insert_result['success']:
-			print(f"⚠️ 数据库插入失败: {insert_result['error_msg']}")
+			logger.warning("数据库插入失败: %s", insert_result['error_msg'])
 
 		# 5. 轮询 checkStatus 直到完成或出错
 		max_retries = 30  # 最多轮询 30 次
@@ -121,7 +131,8 @@ def recognition(request):
 			elif status == 'error':
 				# 更新数据库状态为 error
 				sql_service.update_task_status(request_id, 'error')
-				return _standard_api_response(False, error_msg=status_result.get('error_message', '识别出错'))
+				logger.warning("识别出错: %s", status_result.get('error_message'))
+				return _standard_api_response(False, error_msg='识别出错')
 
 			elif status == 'Running':
 				# 继续等待
@@ -129,78 +140,68 @@ def recognition(request):
 			else:
 				# 未知状态
 				sql_service.update_task_status(request_id, 'error')
-				return _standard_api_response(False, error_msg=f'未知状态: {status}')
+				logger.warning("识别返回未知状态: %s", status)
+				return _standard_api_response(False, error_msg='识别出错')
 
 		# 超时
 		sql_service.update_task_status(request_id, 'timeout')
 		return _standard_api_response(False, error_msg='识别超时')
 
-	except Exception as e:
-		print(f"❌ recognition Error: {e}")
-		return _standard_api_response(False, error_msg=f'识别过程中发生错误: {str(e)}')
+	except Exception:
+		logger.exception("recognition 失败")
+		return _standard_api_response(False, error_msg='识别过程中发生错误')
 
 
 
 @csrf_exempt
 def getStoragedData(request):
 	"""
-	从 Azure Blob Storage 获取指定文件
+	从 Azure Blob Storage 获取在线书库里某本书的文件
 
 	参数:
-		prefix: 文件路径前缀
-		type: 文件类型（如 pdf, jpg, png）
+		prefix: 书的 book_prefix，必须出现在 metadata/books_list.json 里
+		type: 文件类型，pdf 或 json
 
 	返回:
 		如果是 PDF: JSON 格式的 PDF base64 数组
-		如果不是 PDF: 文件的二进制数据
+		如果是 JSON: 解析后的 JSON
 	"""
 	try:
 		# 1. 解析请求参数
-		prefix = request.GET.get('prefix', '')
-		file_type = request.GET.get('type', '')
+		prefix = request.GET.get('prefix', '').strip().rstrip('/')
+		file_type = request.GET.get('type', '').lower()
 
-		if not file_type:
-			return JsonResponse({'error': '缺少参数: type'}, status=400)
+		if file_type not in LIBRARY_FILE_TYPES:
+			return JsonResponse({'error': '不支持的文件类型'}, status=400)
 
-		# 2. 调用 AzureBlobService 下载文件
+		# 2. 只允许读取在线书库里的书，不能读取用户上传的结果等其他文件
 		blob_service = AzureBlobService()
-		file_data = blob_service.downloadFile(prefix, file_type)
+		if not prefix or prefix not in blob_service.get_library_prefixes():
+			return JsonResponse({'error': '文件不存在'}, status=404)
+
+		file_data = blob_service.downloadFile(prefix + '/', file_type)
 
 		# 3. 根据文件类型返回数据
-		if file_type.lower() == 'pdf':
+		if file_type == 'pdf':
 			# PDF 文件：转换为 base64 返回
-			import base64
 			pdf_base64 = base64.b64encode(file_data).decode('utf-8')
 			return JsonResponse({
 				'type': 'pdf',
 				'data': f'data:application/pdf;base64,{pdf_base64}'
 			})
-		elif file_type.lower() == 'json':
+		else:
 			# JSON 文件：解析后返回
-			import json
 			json_data = json.loads(file_data.decode('utf-8'))
 			return JsonResponse({
 				'type': 'json',
 				'data': json_data
 			})
-		else:
-			# 其他文件：返回二进制数据
-			content_type_map = {
-				'jpg': 'image/jpeg',
-				'jpeg': 'image/jpeg',
-				'png': 'image/png',
-				'txt': 'text/plain',
-			}
-			content_type = content_type_map.get(file_type.lower(), 'application/octet-stream')
-			
-			response = HttpResponse(file_data, content_type=content_type)
-			response['Content-Disposition'] = f'attachment; filename="file.{file_type}"'
-			return response
 
-	except FileNotFoundError as e:
-		return JsonResponse({'error': str(e)}, status=404)
-	except Exception as e:
-		return JsonResponse({'error': f'获取文件失败: {str(e)}'}, status=500)
+	except FileNotFoundError:
+		return JsonResponse({'error': '文件不存在'}, status=404)
+	except Exception:
+		logger.exception("getStoragedData 失败")
+		return JsonResponse({'error': '获取文件失败'}, status=500)
 
 
 @csrf_exempt
@@ -209,11 +210,11 @@ def getBookMetadata(request):
 	try:
 		metadata=blob_service.download_meta_data()
 		return JsonResponse(metadata)
-	except Exception as e:
-		print("Fail to download meta data, ", e)
+	except Exception:
+		logger.exception("获取书籍元数据失败")
 		return JsonResponse({
 			'success': False,
-			'error': f'获取书籍元数据失败: {str(e)}'
+			'error': '获取书籍元数据失败'
 		}, status=500)
 
 
@@ -225,8 +226,8 @@ def getImageFromAB2(request):
 	try:
 		payload = json.loads(request.body.decode('utf-8') or '{}')
 		image_url = payload.get('imageUrl') or payload.get('image_url')
-	except json.JSONDecodeError as exc:
-		return _standard_api_response(False, error_msg=f'请求体不是有效的 JSON: {exc}')
+	except json.JSONDecodeError:
+		return _standard_api_response(False, error_msg='请求体不是有效的 JSON')
 
 	if not image_url:
 		return _standard_api_response(False, error_msg='缺少参数 imageUrl')
@@ -235,29 +236,9 @@ def getImageFromAB2(request):
 		blob_service = AzureBlobService2()
 		data_url = blob_service.downloadImageAsBase64(image_url)
 		return _standard_api_response(True, data=data_url)
-	except Exception as exc:
-		return _standard_api_response(False, error_msg=f'获取图片失败: {exc}')
-
-
-@csrf_exempt
-def getPageData(request):
-	"""POST: 接收 info 对象，从 AzureBlobService 下载对应文件"""
-	if request.method != 'POST':
-		return _standard_api_response(False, error_msg='仅支持 POST 请求')
-
-	try:
-		payload = json.loads(request.body.decode('utf-8') or '{}')
-		info = payload.get('info')
-	except json.JSONDecodeError as exc:
-		return _standard_api_response(False, error_msg=f'请求体不是有效的 JSON: {exc}')
-
-
-	try:
-		blob_service = AzureBlobService()
-		result = blob_service.downloadFile(info)
-		return JsonResponse(result, status=200)
-	except Exception as exc:
-		return _standard_api_response(False, error_msg=f'下载文件失败: {exc}')
+	except Exception:
+		logger.exception("getImageFromAB2 失败")
+		return _standard_api_response(False, error_msg='获取图片失败')
 
 
 @csrf_exempt
@@ -278,30 +259,39 @@ def getBookHistory(request):
 		if result['success']:
 			return _standard_api_response(True, data=result['data'])
 		else:
-			return _standard_api_response(False, error_msg=result['error_msg'])
+			return _standard_api_response(False, error_msg='获取历史记录失败')
 
-	except Exception as e:
-		return _standard_api_response(False, error_msg=f'获取历史记录失败: {str(e)}')
+	except Exception:
+		logger.exception("getBookHistory 失败")
+		return _standard_api_response(False, error_msg='获取历史记录失败')
 
 
 @csrf_exempt
 def getResultOfUser(request):
 	"""
-	根据 request_id 获取用户的识别结果
+	根据 request_id 获取用户的识别结果（只能取自己的）
 	POST: { "request_id": "/api/intelligentOcr/analyzeResults/abc123xyz" }
 	返回: { "json": <识别结果>, "pdf": "data:application/pdf;base64,..." }
 	"""
 	if request.method != 'POST':
 		return _standard_api_response(False, error_msg='仅支持 POST 请求')
 
+	user_id = request.COOKIES.get('rfy_uuid')
+	if not user_id:
+		return _standard_api_response(False, error_msg='未找到用户 ID')
+
 	try:
 		payload = json.loads(request.body.decode('utf-8') or '{}')
 		request_id = payload.get('request_id', '')
-	except json.JSONDecodeError as exc:
-		return _standard_api_response(False, error_msg=f'请求体不是有效的 JSON: {exc}')
+	except json.JSONDecodeError:
+		return _standard_api_response(False, error_msg='请求体不是有效的 JSON')
 
-	if not request_id:
+	if not request_id or not isinstance(request_id, str):
 		return _standard_api_response(False, error_msg='缺少参数 request_id')
+
+	# 只允许读取当前用户自己提交的任务
+	if not SqlService().task_belongs_to_user(user_id, request_id):
+		return _standard_api_response(False, error_msg='文件不存在')
 
 	# 从 request_id 中提取最后的随机字符串部分
 	request_id_suffix = request_id.rstrip('/').split('/')[-1]
@@ -326,7 +316,8 @@ def getResultOfUser(request):
 			'pdf': pdf_data_url
 		})
 
-	except FileNotFoundError as e:
-		return _standard_api_response(False, error_msg=f'文件不存在: {str(e)}')
-	except Exception as e:
-		return _standard_api_response(False, error_msg=f'获取结果失败: {str(e)}')
+	except FileNotFoundError:
+		return _standard_api_response(False, error_msg='文件不存在')
+	except Exception:
+		logger.exception("getResultOfUser 失败")
+		return _standard_api_response(False, error_msg='获取结果失败')

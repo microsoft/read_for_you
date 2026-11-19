@@ -1,18 +1,15 @@
 from django.views.generic import TemplateView
 from django.views.static import serve as static_serve
-from django.contrib import admin
 from django.urls import path, re_path
 from . import views
 from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
     path("recognition", views.recognition, name="recognition"),
     path("getStoragedData", views.getStoragedData, name="getStoragedData"),
     path("getBookMetadata", views.getBookMetadata, name="getBookMetadata"),
     path("getImageFromAB2", views.getImageFromAB2, name="getImageFromAB2"),
-    path("getPageData", views.getPageData, name="getPageData"),
     path("getBookHistory", views.getBookHistory, name="getBookHistory"),
     path("getResultOfUser", views.getResultOfUser, name="getResultOfUser"),
 ]
